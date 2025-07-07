@@ -1,14 +1,49 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // Supabase configuration
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
-// Create Supabase client with AsyncStorage for persistence
+// Create storage adapter that works across platforms
+const createStorageAdapter = () => {
+  if (Platform.OS === 'web') {
+    // For web, use a custom storage that handles SSR
+    return {
+      getItem: (key: string) => {
+        if (typeof window === 'undefined') return null;
+        try {
+          return window.localStorage?.getItem(key) ?? null;
+        } catch {
+          return null;
+        }
+      },
+      setItem: (key: string, value: string) => {
+        if (typeof window === 'undefined') return;
+        try {
+          window.localStorage?.setItem(key, value);
+        } catch {
+          // Ignore storage errors
+        }
+      },
+      removeItem: (key: string) => {
+        if (typeof window === 'undefined') return;
+        try {
+          window.localStorage?.removeItem(key);
+        } catch {
+          // Ignore storage errors
+        }
+      },
+    };
+  }
+  return AsyncStorage;
+};
+
+// Create Supabase client with platform-appropriate storage
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
+    storage: createStorageAdapter(),
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
@@ -297,8 +332,12 @@ export const signOut = async () => {
 };
 
 export const getCurrentUser = async () => {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  return { user, error };
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    return { user, error };
+  } catch (error) {
+    return { user: null, error };
+  }
 };
 
 // Real-time subscriptions
