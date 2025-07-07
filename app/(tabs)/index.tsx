@@ -1,8 +1,8 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useState, useCallback } from 'react';
-import { Plus, Zap, TrendingUp, Clock } from 'lucide-react-native';
-import { getTickets, getWinningNumbers, compareTickets } from '@/utils/storage';
+import { Plus, Zap, TrendingUp, Clock, Trophy, Ticket } from 'lucide-react-native';
+import { getUserTickets, getWinningNumbers, getCurrentUser } from '@/utils/database';
 import { router } from 'expo-router';
 
 interface TicketResult {
@@ -11,6 +11,11 @@ interface TicketResult {
   isWinner: boolean;
   matchCount: number;
   purchaseDate: string;
+  ticket_results?: Array<{
+    match_count: number;
+    is_winner: boolean;
+    prize_amount: number;
+  }>;
 }
 
 export default function HomeScreen() {
@@ -21,6 +26,8 @@ export default function HomeScreen() {
     pendingResults: 0,
   });
   const [latestWinningNumbers, setLatestWinningNumbers] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -30,23 +37,39 @@ export default function HomeScreen() {
 
   const loadData = async () => {
     try {
-      const tickets = await getTickets();
-      const winningNumbers = await getWinningNumbers();
-      const latestWinning = winningNumbers[0]?.numbers || '';
-      
-      setLatestWinningNumbers(latestWinning);
+      const { user: currentUser } = await getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        
+        const tickets = await getUserTickets();
+        const winningNumbers = await getWinningNumbers();
+        const latestWinning = winningNumbers[0]?.numbers || '';
+        
+        setLatestWinningNumbers(latestWinning);
 
-      const ticketResults = await compareTickets();
-      const recent = ticketResults.slice(0, 3);
-      
-      setRecentTickets(recent);
-      setStats({
-        totalTickets: tickets.length,
-        winningTickets: ticketResults.filter(t => t.isWinner).length,
-        pendingResults: tickets.filter(t => !latestWinning).length,
-      });
+        // Process tickets to get results
+        const processedTickets = tickets.map(ticket => ({
+          id: ticket.id,
+          numbers: ticket.numbers,
+          purchaseDate: ticket.purchase_date,
+          isWinner: ticket.ticket_results?.[0]?.is_winner || false,
+          matchCount: ticket.ticket_results?.[0]?.match_count || 0,
+          ticket_results: ticket.ticket_results
+        }));
+
+        const recent = processedTickets.slice(0, 3);
+        
+        setRecentTickets(recent);
+        setStats({
+          totalTickets: tickets.length,
+          winningTickets: processedTickets.filter(t => t.isWinner).length,
+          pendingResults: tickets.filter(t => !t.ticket_results || t.ticket_results.length === 0).length,
+        });
+      }
     } catch (error) {
       console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -57,6 +80,35 @@ export default function HomeScreen() {
   const checkResults = () => {
     router.push('/results');
   };
+
+  const formatNumbers = (numbers: string): string => {
+    return numbers.replace(/(\d{2})/g, '$1 ').trim();
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
+
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Lottery Checker</Text>
+          <Text style={styles.subtitle}>Please sign in to continue</Text>
+        </View>
+        <View style={styles.signInPrompt}>
+          <Text style={styles.signInText}>You need to sign in to use this app</Text>
+          <TouchableOpacity style={styles.signInButton} onPress={() => router.push('/auth/login')}>
+            <Text style={styles.signInButtonText}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -80,10 +132,21 @@ export default function HomeScreen() {
       {/* Latest Winning Numbers */}
       {latestWinningNumbers ? (
         <View style={styles.winningNumbersCard}>
-          <Text style={styles.cardTitle}>Latest Winning Numbers</Text>
-          <Text style={styles.winningNumbers}>{latestWinningNumbers}</Text>
+          <View style={styles.cardHeader}>
+            <Trophy size={24} color="#d97706" />
+            <Text style={styles.cardTitle}>Latest Winning Numbers</Text>
+          </View>
+          <Text style={styles.winningNumbers}>{formatNumbers(latestWinningNumbers)}</Text>
         </View>
-      ) : null}
+      ) : (
+        <View style={styles.winningNumbersCard}>
+          <View style={styles.cardHeader}>
+            <Clock size={24} color="#6b7280" />
+            <Text style={styles.cardTitle}>Waiting for Results</Text>
+          </View>
+          <Text style={styles.waitingText}>No winning numbers announced yet</Text>
+        </View>
+      )}
 
       {/* Stats */}
       <View style={styles.statsContainer}>
@@ -111,7 +174,7 @@ export default function HomeScreen() {
           recentTickets.map((ticket) => (
             <View key={ticket.id} style={styles.ticketCard}>
               <View style={styles.ticketHeader}>
-                <Text style={styles.ticketNumbers}>{ticket.numbers}</Text>
+                <Text style={styles.ticketNumbers}>{formatNumbers(ticket.numbers)}</Text>
                 <View style={[styles.statusBadge, ticket.isWinner ? styles.winnerBadge : styles.loserBadge]}>
                   <Text style={[styles.statusText, ticket.isWinner ? styles.winnerText : styles.loserText]}>
                     {ticket.isWinner ? 'Winner!' : 'No Match'}
@@ -126,6 +189,7 @@ export default function HomeScreen() {
           ))
         ) : (
           <View style={styles.emptyState}>
+            <Ticket size={48} color="#9ca3af" />
             <Text style={styles.emptyText}>No tickets yet</Text>
             <Text style={styles.emptySubtext}>Add your first lottery ticket to get started</Text>
           </View>
@@ -139,6 +203,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6b7280',
   },
   header: {
     paddingHorizontal: 24,
@@ -156,6 +231,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter-Regular',
     color: '#6b7280',
+  },
+  signInPrompt: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  signInText: {
+    fontSize: 18,
+    fontFamily: 'Inter-Regular',
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  signInButton: {
+    backgroundColor: '#2563eb',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+  },
+  signInButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#ffffff',
   },
   actionsContainer: {
     flexDirection: 'row',
@@ -199,11 +298,16 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
   cardTitle: {
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
     color: '#1f2937',
-    marginBottom: 12,
   },
   winningNumbers: {
     fontSize: 24,
@@ -211,6 +315,12 @@ const styles = StyleSheet.create({
     color: '#d97706',
     textAlign: 'center',
     letterSpacing: 2,
+  },
+  waitingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6b7280',
+    textAlign: 'center',
   },
   statsContainer: {
     flexDirection: 'row',
@@ -317,6 +427,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: '#6b7280',
     marginBottom: 8,
+    marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,

@@ -1,34 +1,48 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from 'react-native';
 import { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { Plus, Trash2, MessageSquare, Calendar } from 'lucide-react-native';
-import { saveTicket, getTickets, deleteTicket } from '@/utils/storage';
+import { Plus, Trash2, MessageSquare, Calendar, Ticket } from 'lucide-react-native';
+import { createTicket, getUserTickets, deleteTicket as deleteTicketFromDB, getCurrentUser } from '@/utils/database';
 import * as SMS from 'expo-sms';
 
-interface Ticket {
+interface TicketData {
   id: string;
   numbers: string;
-  purchaseDate: string;
-  source: 'manual' | 'sms';
+  purchase_date: string;
+  source: 'manual' | 'sms' | 'api';
+  ticket_results?: Array<{
+    match_count: number;
+    is_winner: boolean;
+    prize_amount: number;
+  }>;
 }
 
 export default function TicketsScreen() {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [tickets, setTickets] = useState<TicketData[]>([]);
   const [newTicketNumbers, setNewTicketNumbers] = useState('');
   const [isAddingTicket, setIsAddingTicket] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
 
   useFocusEffect(
     useCallback(() => {
-      loadTickets();
+      loadUserAndTickets();
     }, [])
   );
 
-  const loadTickets = async () => {
+  const loadUserAndTickets = async () => {
     try {
-      const savedTickets = await getTickets();
-      setTickets(savedTickets);
+      const { user: currentUser } = await getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        const userTickets = await getUserTickets();
+        setTickets(userTickets || []);
+      }
     } catch (error) {
       console.error('Error loading tickets:', error);
+      Alert.alert('Error', 'Failed to load tickets');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -42,21 +56,24 @@ export default function TicketsScreen() {
       return;
     }
 
-    try {
-      const ticket: Ticket = {
-        id: Date.now().toString(),
-        numbers: newTicketNumbers,
-        purchaseDate: new Date().toISOString(),
-        source: 'manual',
-      };
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to add tickets');
+      return;
+    }
 
-      await saveTicket(ticket);
+    try {
+      setLoading(true);
+      await createTicket(newTicketNumbers, 'manual');
+      
       setNewTicketNumbers('');
       setIsAddingTicket(false);
-      loadTickets();
+      await loadUserAndTickets();
       Alert.alert('Success', 'Ticket added successfully!');
     } catch (error) {
+      console.error('Error adding ticket:', error);
       Alert.alert('Error', 'Failed to add ticket');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -71,10 +88,15 @@ export default function TicketsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteTicket(ticketId);
-              loadTickets();
+              setLoading(true);
+              await deleteTicketFromDB(ticketId);
+              await loadUserAndTickets();
+              Alert.alert('Success', 'Ticket deleted successfully');
             } catch (error) {
+              console.error('Error deleting ticket:', error);
               Alert.alert('Error', 'Failed to delete ticket');
+            } finally {
+              setLoading(false);
             }
           },
         },
@@ -103,6 +125,26 @@ export default function TicketsScreen() {
   const formatTicketNumbers = (numbers: string): string => {
     return numbers.replace(/(\d{2})/g, '$1 ').trim();
   };
+
+  const getTicketStatus = (ticket: TicketData) => {
+    if (ticket.ticket_results && ticket.ticket_results.length > 0) {
+      const result = ticket.ticket_results[0];
+      return {
+        isWinner: result.is_winner,
+        matchCount: result.match_count,
+        prizeAmount: result.prize_amount
+      };
+    }
+    return { isWinner: false, matchCount: 0, prizeAmount: 0 };
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading tickets...</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -161,34 +203,50 @@ export default function TicketsScreen() {
       <View style={styles.ticketsSection}>
         <Text style={styles.sectionTitle}>Your Tickets ({tickets.length})</Text>
         {tickets.length > 0 ? (
-          tickets.map((ticket) => (
-            <View key={ticket.id} style={styles.ticketCard}>
-              <View style={styles.ticketHeader}>
-                <Text style={styles.ticketNumbers}>{formatTicketNumbers(ticket.numbers)}</Text>
-                <TouchableOpacity 
-                  style={styles.deleteButton}
-                  onPress={() => removeTicket(ticket.id)}
-                >
-                  <Trash2 size={18} color="#dc2626" />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.ticketMeta}>
-                <View style={styles.metaItem}>
-                  <Calendar size={16} color="#6b7280" />
-                  <Text style={styles.metaText}>
-                    {new Date(ticket.purchaseDate).toLocaleDateString()}
-                  </Text>
+          tickets.map((ticket) => {
+            const status = getTicketStatus(ticket);
+            return (
+              <View key={ticket.id} style={styles.ticketCard}>
+                <View style={styles.ticketHeader}>
+                  <Text style={styles.ticketNumbers}>{formatTicketNumbers(ticket.numbers)}</Text>
+                  <TouchableOpacity 
+                    style={styles.deleteButton}
+                    onPress={() => removeTicket(ticket.id)}
+                  >
+                    <Trash2 size={18} color="#dc2626" />
+                  </TouchableOpacity>
                 </View>
-                <View style={[styles.sourceBadge, ticket.source === 'sms' ? styles.smsBadge : styles.manualBadge]}>
-                  <Text style={styles.sourceText}>
-                    {ticket.source === 'sms' ? 'SMS' : 'Manual'}
-                  </Text>
+                
+                <View style={styles.ticketMeta}>
+                  <View style={styles.metaItem}>
+                    <Calendar size={16} color="#6b7280" />
+                    <Text style={styles.metaText}>
+                      {new Date(ticket.purchase_date).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <View style={[styles.sourceBadge, ticket.source === 'sms' ? styles.smsBadge : styles.manualBadge]}>
+                    <Text style={[styles.sourceText, ticket.source === 'sms' ? styles.smsText : styles.manualText]}>
+                      {ticket.source === 'sms' ? 'SMS' : 'Manual'}
+                    </Text>
+                  </View>
                 </View>
+
+                {/* Result Status */}
+                {status.matchCount > 0 && (
+                  <View style={styles.resultSection}>
+                    <View style={[styles.resultBadge, status.isWinner ? styles.winnerBadge : styles.matchBadge]}>
+                      <Text style={[styles.resultText, status.isWinner ? styles.winnerText : styles.matchText]}>
+                        {status.isWinner ? `🎉 WINNER! $${status.prizeAmount}` : `${status.matchCount} matches`}
+                      </Text>
+                    </View>
+                  </View>
+                )}
               </View>
-            </View>
-          ))
+            );
+          })
         ) : (
           <View style={styles.emptyState}>
+            <Ticket size={48} color="#9ca3af" />
             <Text style={styles.emptyText}>No tickets yet</Text>
             <Text style={styles.emptySubtext}>Add your first lottery ticket to get started</Text>
           </View>
@@ -202,6 +260,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6b7280',
   },
   header: {
     paddingHorizontal: 24,
@@ -368,6 +437,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
   metaItem: {
     flexDirection: 'row',
@@ -393,7 +463,37 @@ const styles = StyleSheet.create({
   sourceText: {
     fontSize: 12,
     fontFamily: 'Inter-SemiBold',
+  },
+  smsText: {
     color: '#059669',
+  },
+  manualText: {
+    color: '#d97706',
+  },
+  resultSection: {
+    marginTop: 8,
+  },
+  resultBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  winnerBadge: {
+    backgroundColor: '#dcfce7',
+  },
+  matchBadge: {
+    backgroundColor: '#fef3c7',
+  },
+  resultText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Bold',
+  },
+  winnerText: {
+    color: '#059669',
+  },
+  matchText: {
+    color: '#d97706',
   },
   emptyState: {
     alignItems: 'center',
@@ -404,6 +504,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: '#6b7280',
     marginBottom: 8,
+    marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,

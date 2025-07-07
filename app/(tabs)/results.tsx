@@ -1,14 +1,15 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { Trophy, RefreshCw, Calendar, Target } from 'lucide-react-native';
-import { getWinningNumbers, compareTickets } from '@/utils/storage';
+import { Trophy, RefreshCw, Calendar, Target, Ticket } from 'lucide-react-native';
+import { getWinningNumbers, getUserTickets, getCurrentUser } from '@/utils/database';
 
 interface WinningNumber {
   id: string;
   numbers: string;
-  drawDate: string;
+  draw_date: string;
   month: string;
+  prize_amount: number;
 }
 
 interface TicketResult {
@@ -17,6 +18,7 @@ interface TicketResult {
   isWinner: boolean;
   matchCount: number;
   purchaseDate: string;
+  prizeAmount: number;
 }
 
 export default function ResultsScreen() {
@@ -24,6 +26,8 @@ export default function ResultsScreen() {
   const [ticketResults, setTicketResults] = useState<TicketResult[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -33,17 +37,35 @@ export default function ResultsScreen() {
 
   const loadResults = async () => {
     try {
-      const numbers = await getWinningNumbers();
-      const results = await compareTickets();
-      
-      setWinningNumbers(numbers);
-      setTicketResults(results);
-      
-      if (numbers.length > 0) {
-        setSelectedMonth(numbers[0].month);
+      const { user: currentUser } = await getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        
+        const numbers = await getWinningNumbers();
+        const tickets = await getUserTickets();
+        
+        setWinningNumbers(numbers);
+        
+        // Process tickets to get results
+        const processedResults = tickets.map(ticket => ({
+          id: ticket.id,
+          numbers: ticket.numbers,
+          purchaseDate: ticket.purchase_date,
+          isWinner: ticket.ticket_results?.[0]?.is_winner || false,
+          matchCount: ticket.ticket_results?.[0]?.match_count || 0,
+          prizeAmount: ticket.ticket_results?.[0]?.prize_amount || 0,
+        }));
+        
+        setTicketResults(processedResults);
+        
+        if (numbers.length > 0) {
+          setSelectedMonth(numbers[0].month);
+        }
       }
     } catch (error) {
       console.error('Error loading results:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -77,6 +99,25 @@ export default function ResultsScreen() {
   const getUniqueMonths = () => {
     return [...new Set(winningNumbers.map(w => w.month))].sort().reverse();
   };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading results...</Text>
+      </View>
+    );
+  }
+
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Results</Text>
+          <Text style={styles.subtitle}>Please sign in to view results</Text>
+        </View>
+      </View>
+    );
+  }
 
   const months = getUniqueMonths();
   const currentMonthResults = selectedMonth ? getResultsForMonth(selectedMonth) : [];
@@ -138,9 +179,10 @@ export default function ResultsScreen() {
           <View style={styles.drawInfo}>
             <Calendar size={16} color="#6b7280" />
             <Text style={styles.drawDate}>
-              Draw Date: {new Date(currentWinningNumber.drawDate).toLocaleDateString()}
+              Draw Date: {new Date(currentWinningNumber.draw_date).toLocaleDateString()}
             </Text>
           </View>
+          <Text style={styles.prizeAmount}>Prize: ${currentWinningNumber.prize_amount.toLocaleString()}</Text>
         </View>
       )}
 
@@ -185,7 +227,7 @@ export default function ResultsScreen() {
                     styles.resultBadgeText,
                     result.isWinner ? styles.winnerBadgeText : styles.loserBadgeText
                   ]}>
-                    {result.isWinner ? 'WINNER!' : `${result.matchCount} matches`}
+                    {result.isWinner ? `WINNER! $${result.prizeAmount}` : `${result.matchCount} matches`}
                   </Text>
                 </View>
               </View>
@@ -212,11 +254,13 @@ export default function ResultsScreen() {
         </View>
       ) : selectedMonth ? (
         <View style={styles.emptyState}>
+          <Ticket size={48} color="#9ca3af" />
           <Text style={styles.emptyText}>No tickets for this month</Text>
           <Text style={styles.emptySubtext}>Add tickets to see results here</Text>
         </View>
       ) : (
         <View style={styles.emptyState}>
+          <Trophy size={48} color="#9ca3af" />
           <Text style={styles.emptyText}>No results available</Text>
           <Text style={styles.emptySubtext}>Winning numbers will appear here once announced</Text>
         </View>
@@ -229,6 +273,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6b7280',
   },
   header: {
     paddingHorizontal: 24,
@@ -340,11 +395,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    marginBottom: 8,
   },
   drawDate: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#6b7280',
+  },
+  prizeAmount: {
+    fontSize: 16,
+    fontFamily: 'Inter-Bold',
+    color: '#059669',
+    textAlign: 'center',
   },
   summarySection: {
     marginBottom: 24,
@@ -449,6 +511,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: '#6b7280',
     marginBottom: 8,
+    marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,

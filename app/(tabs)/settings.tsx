@@ -1,17 +1,96 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
-import { useState } from 'react';
-import { Bell, Shield, Trash2, Download, Globe, HelpCircle } from 'lucide-react-native';
-import { clearAllData } from '@/utils/storage';
+import { useState, useEffect } from 'react';
+import { Bell, User, Shield, Trash2, Download, HelpCircle, LogOut, Eye, EyeOff } from 'lucide-react-native';
+import { supabase, signOut, getCurrentUser } from '@/utils/supabase';
+import { updateUserProfile, getUserProfile } from '@/utils/database';
 import { router } from 'expo-router';
 
-export default function SettingsScreen() {
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+interface UserProfile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  phone: string | null;
+  preferences: any;
+}
 
-  const toggleNotifications = () => {
-    setNotificationsEnabled(!notificationsEnabled);
+export default function SettingsScreen() {
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [smsMonitoring, setSmsMonitoring] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  const loadUserData = async () => {
+    try {
+      const { user: currentUser } = await getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        const userProfile = await getUserProfile();
+        setProfile(userProfile);
+        
+        // Load preferences
+        if (userProfile?.preferences) {
+          setNotificationsEnabled(userProfile.preferences.notifications ?? true);
+          setSmsMonitoring(userProfile.preferences.sms_monitoring ?? false);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updatePreferences = async (newPreferences: any) => {
+    try {
+      if (profile) {
+        await updateUserProfile({
+          preferences: {
+            ...profile.preferences,
+            ...newPreferences
+          }
+        });
+        
+        setProfile(prev => prev ? {
+          ...prev,
+          preferences: { ...prev.preferences, ...newPreferences }
+        } : null);
+      }
+    } catch (error) {
+      console.error('Error updating preferences:', error);
+      Alert.alert('Error', 'Failed to update preferences');
+    }
+  };
+
+  const toggleNotifications = async () => {
+    const newValue = !notificationsEnabled;
+    setNotificationsEnabled(newValue);
+    await updatePreferences({ notifications: newValue });
+    
     Alert.alert(
       'Notifications',
-      `Notifications ${!notificationsEnabled ? 'enabled' : 'disabled'}`,
+      `Notifications ${newValue ? 'enabled' : 'disabled'}`,
+      [{ text: 'OK' }]
+    );
+  };
+
+  const toggleSmsMonitoring = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Feature Unavailable', 'SMS monitoring is only available on mobile devices');
+      return;
+    }
+
+    const newValue = !smsMonitoring;
+    setSmsMonitoring(newValue);
+    await updatePreferences({ sms_monitoring: newValue });
+    
+    Alert.alert(
+      'SMS Monitoring',
+      `SMS monitoring ${newValue ? 'enabled' : 'disabled'}. ${newValue ? 'The app will now scan your SMS messages for lottery tickets.' : ''}`,
       [{ text: 'OK' }]
     );
   };
@@ -35,8 +114,15 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await clearAllData();
-              Alert.alert('Success', 'All data has been cleared');
+              // Clear user's tickets from database
+              const { error } = await supabase
+                .from('tickets')
+                .delete()
+                .eq('user_id', user?.id);
+
+              if (error) throw error;
+              
+              Alert.alert('Success', 'All your data has been cleared');
             } catch (error) {
               Alert.alert('Error', 'Failed to clear data');
             }
@@ -46,12 +132,27 @@ export default function SettingsScreen() {
     );
   };
 
-  const openAdmin = () => {
-    if (Platform.OS === 'android') {
-      router.push('/admin');
-    } else {
-      Alert.alert('Admin Panel', 'Admin panel is only available on web version');
-    }
+  const handleSignOut = async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut();
+              // Navigate to login screen or handle sign out
+              router.replace('/auth/login');
+            } catch (error) {
+              Alert.alert('Error', 'Failed to sign out');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const showHelp = () => {
@@ -59,9 +160,9 @@ export default function SettingsScreen() {
       'Help & Support',
       'Lottery Checker App\n\n' +
       '• Add tickets manually or via SMS\n' +
-      '• Check results monthly\n' +
-      '• Track your winning history\n' +
-      '• Admin panel for managing results\n\n' +
+      '• Check results automatically\n' +
+      '• Get notified about wins\n' +
+      '• Track your winning history\n\n' +
       'For support, contact: support@lotteryapp.com',
       [{ text: 'OK' }]
     );
@@ -104,12 +205,38 @@ export default function SettingsScreen() {
     </TouchableOpacity>
   );
 
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
         <Text style={styles.title}>Settings</Text>
-        <Text style={styles.subtitle}>Manage your app preferences</Text>
+        <Text style={styles.subtitle}>Manage your preferences</Text>
       </View>
+
+      {/* Profile Section */}
+      {profile && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Profile</Text>
+          <View style={styles.profileCard}>
+            <View style={styles.profileIcon}>
+              <User size={24} color="#2563eb" />
+            </View>
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileName}>
+                {profile.full_name || 'User'}
+              </Text>
+              <Text style={styles.profileEmail}>{profile.email}</Text>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* Notifications */}
       <View style={styles.section}>
@@ -117,11 +244,22 @@ export default function SettingsScreen() {
         <SettingItem
           icon={<Bell size={20} color="#2563eb" />}
           title="Push Notifications"
-          subtitle="Get notified about new results"
+          subtitle="Get notified about lottery results"
           onPress={toggleNotifications}
           rightElement={
             <View style={[styles.toggle, notificationsEnabled && styles.toggleActive]}>
               <View style={[styles.toggleThumb, notificationsEnabled && styles.toggleThumbActive]} />
+            </View>
+          }
+        />
+        <SettingItem
+          icon={<Shield size={20} color="#2563eb" />}
+          title="SMS Monitoring"
+          subtitle="Auto-detect tickets from SMS messages"
+          onPress={toggleSmsMonitoring}
+          rightElement={
+            <View style={[styles.toggle, smsMonitoring && styles.toggleActive]}>
+              <View style={[styles.toggleThumb, smsMonitoring && styles.toggleThumbActive]} />
             </View>
           }
         />
@@ -139,20 +277,9 @@ export default function SettingsScreen() {
         <SettingItem
           icon={<Trash2 size={20} color="#dc2626" />}
           title="Clear All Data"
-          subtitle="Permanently delete all tickets"
+          subtitle="Permanently delete all your tickets"
           onPress={clearData}
           destructive={true}
-        />
-      </View>
-
-      {/* Admin */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Administration</Text>
-        <SettingItem
-          icon={<Globe size={20} color="#2563eb" />}
-          title="Admin Panel"
-          subtitle="Manage winning numbers (Web only)"
-          onPress={openAdmin}
         />
       </View>
 
@@ -164,6 +291,18 @@ export default function SettingsScreen() {
           title="Help & Support"
           subtitle="Get help and contact support"
           onPress={showHelp}
+        />
+      </View>
+
+      {/* Account */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Account</Text>
+        <SettingItem
+          icon={<LogOut size={20} color="#dc2626" />}
+          title="Sign Out"
+          subtitle="Sign out of your account"
+          onPress={handleSignOut}
+          destructive={true}
         />
       </View>
 
@@ -181,6 +320,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6b7280',
   },
   header: {
     paddingHorizontal: 24,
@@ -208,6 +358,38 @@ const styles = StyleSheet.create({
     color: '#1f2937',
     marginBottom: 16,
     paddingHorizontal: 24,
+  },
+  profileCard: {
+    backgroundColor: '#ffffff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  profileIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  profileEmail: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6b7280',
   },
   settingItem: {
     backgroundColor: '#ffffff',
