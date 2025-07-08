@@ -2,7 +2,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert,
 import { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { Plus, Trash2, MessageSquare, Calendar, Ticket } from 'lucide-react-native';
-import { createTicket, getUserTickets, deleteTicket as deleteTicketFromDB, getCurrentUser } from '@/utils/database';
+import { createTicket, getUserTickets, deleteTicket as deleteTicketFromDB } from '@/utils/database';
+import { getCurrentUser } from '@/utils/supabase';
 import * as SMS from 'expo-sms';
 
 interface TicketData {
