@@ -2,7 +2,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'rea
 import { useFocusEffect } from '@react-navigation/native';
 import { useState, useCallback } from 'react';
 import { Plus, Zap, TrendingUp, Clock, Trophy, Ticket } from 'lucide-react-native';
-import { getUserTickets, getWinningNumbers, getCurrentUser } from '@/utils/database';
+import { getUserTickets, getWinningNumbers } from '@/utils/database';
+import { getCurrentUser } from '@/utils/supabase';
 import { router } from 'expo-router';
 
 interface TicketResult {
