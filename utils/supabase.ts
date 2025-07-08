@@ -340,6 +340,40 @@ export const getCurrentUser = async () => {
   }
 };
 
+// Helper function to ensure user profile exists
+export const ensureUserProfile = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  // Check if profile exists
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('user_id', user.id)
+    .single();
+
+  if (!profile) {
+    // Create profile if it doesn't exist
+    const { data: newProfile, error } = await supabase
+      .from('profiles')
+      .insert({
+        user_id: user.id,
+        email: user.email || '',
+        full_name: user.user_metadata?.full_name || ''
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error creating profile:', error);
+      return null;
+    }
+    return newProfile;
+  }
+
+  return profile;
+};
+
 // Real-time subscriptions
 export const subscribeToTickets = (userId: string, callback: (payload: any) => void) => {
   return supabase

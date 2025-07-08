@@ -2,7 +2,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } 
 import { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { Trophy, RefreshCw, Calendar, Target, Ticket } from 'lucide-react-native';
-import { getWinningNumbers, getUserTickets, getCurrentUser } from '@/utils/database';
+import { getWinningNumbers, getUserTickets, ensureUserProfile } from '@/utils/database';
+import { getCurrentUser } from '@/utils/supabase';
 
 interface WinningNumber {
   id: string;
@@ -40,6 +41,9 @@ export default function ResultsScreen() {
       const { user: currentUser } = await getCurrentUser();
       if (currentUser) {
         setUser(currentUser);
+        
+        // Ensure user profile exists
+        await ensureUserProfile();
         
         const numbers = await getWinningNumbers();
         const tickets = await getUserTickets();

@@ -36,12 +36,15 @@ export default function TicketsScreen() {
       const { user: currentUser } = await getCurrentUser();
       if (currentUser) {
         setUser(currentUser);
+        
+        // Ensure user profile exists
+        await ensureUserProfile();
         const userTickets = await getUserTickets();
         setTickets(userTickets || []);
       }
     } catch (error) {
       console.error('Error loading tickets:', error);
-      Alert.alert('Error', 'Failed to load tickets');
+      Alert.alert('Error', 'Failed to load tickets. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -53,7 +56,7 @@ export default function TicketsScreen() {
 
   const addTicket = async () => {
     if (!validateTicketNumbers(newTicketNumbers)) {
-      Alert.alert('Invalid Ticket', 'Please enter exactly 10 digits');
+      Alert.alert('Invalid Ticket', 'Please enter exactly 10 digits (0-9 only)');
       return;
     }
 
@@ -64,15 +67,16 @@ export default function TicketsScreen() {
 
     try {
       setLoading(true);
+      console.log('Creating ticket with numbers:', newTicketNumbers);
       await createTicket(newTicketNumbers, 'manual');
       
       setNewTicketNumbers('');
       setIsAddingTicket(false);
       await loadUserAndTickets();
-      Alert.alert('Success', 'Ticket added successfully!');
+      Alert.alert('Success', 'Your lottery ticket has been added successfully!');
     } catch (error) {
       console.error('Error adding ticket:', error);
-      Alert.alert('Error', 'Failed to add ticket');
+      Alert.alert('Error', `Failed to add ticket: ${error.message || 'Please try again'}`);
     } finally {
       setLoading(false);
     }
@@ -92,10 +96,10 @@ export default function TicketsScreen() {
               setLoading(true);
               await deleteTicketFromDB(ticketId);
               await loadUserAndTickets();
-              Alert.alert('Success', 'Ticket deleted successfully');
+              Alert.alert('Success', 'Ticket has been deleted');
             } catch (error) {
               console.error('Error deleting ticket:', error);
-              Alert.alert('Error', 'Failed to delete ticket');
+              Alert.alert('Error', `Failed to delete ticket: ${error.message || 'Please try again'}`);
             } finally {
               setLoading(false);
             }

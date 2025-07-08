@@ -42,6 +42,9 @@ export default function HomeScreen() {
       if (currentUser) {
         setUser(currentUser);
         
+        // Ensure user profile exists
+        await ensureUserProfile();
+        
         const tickets = await getUserTickets();
         const winningNumbers = await getWinningNumbers();
         const latestWinning = winningNumbers[0]?.numbers || '';
@@ -69,6 +72,7 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error('Error loading data:', error);
+      // Don't show alert here, just log the error
     } finally {
       setLoading(false);
     }

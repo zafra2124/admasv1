@@ -1,12 +1,5 @@
 import { supabase } from './supabase';
-import type { Database } from './supabase';
-
-type Tables = Database['public']['Tables'];
-type Ticket = Tables['tickets']['Row'];
-type WinningNumber = Tables['winning_numbers']['Row'];
-type TicketResult = Tables['ticket_results']['Row'];
-type Notification = Tables['notifications']['Row'];
-type Profile = Tables['profiles']['Row'];
+import { getCurrentUser, ensureUserProfile } from './supabase';
 
 // Ticket operations
 export const createTicket = async (
@@ -15,7 +8,7 @@ export const createTicket = async (
   metadata: any = {}
 ) => {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('User not authenticated');
+  if (!user) throw new Error('You must be logged in to add tickets');
 
   const { data, error } = await supabase
     .from('tickets')
@@ -24,6 +17,7 @@ export const createTicket = async (
       numbers,
       source,
       metadata,
+      month: new Date().toISOString().substring(0, 7), // Set current month
       purchase_date: new Date().toISOString(),
     })
     .select()
@@ -58,10 +52,14 @@ export const getUserTickets = async (userId?: string) => {
 };
 
 export const deleteTicket = async (ticketId: string) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('You must be logged in to delete tickets');
+
   const { error } = await supabase
     .from('tickets')
     .delete()
-    .eq('id', ticketId);
+    .eq('id', ticketId)
+    .eq('user_id', user.id); // Ensure user can only delete their own tickets
 
   if (error) throw error;
 };
@@ -198,7 +196,7 @@ export const getUserProfile = async (userId?: string) => {
   return data;
 };
 
-export const updateUserProfile = async (updates: Partial<Profile>) => {
+export const updateUserProfile = async (updates: any) => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('User not authenticated');
 
@@ -211,6 +209,30 @@ export const updateUserProfile = async (updates: Partial<Profile>) => {
 
   if (error) throw error;
   return data;
+};
+
+// Helper function to ensure user profile exists
+export const ensureUserProfile = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  // Check if profile exists
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('user_id', user.id)
+    .single();
+
+  if (!profile) {
+    // Create profile if it doesn't exist
+    await supabase.from('profiles').insert({
+      user_id: user.id,
+      email: user.email || '',
+      full_name: user.user_metadata?.full_name || ''
+    });
+  }
+
+  return profile;
 };
 
 // Analytics operations
