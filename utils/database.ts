@@ -16,7 +16,6 @@ export const createTicket = async (
       numbers,
       source,
       metadata,
-      month: new Date().toISOString().substring(0, 7), // Set current month
       purchase_date: new Date().toISOString(),
     })
     .select()
@@ -149,7 +148,35 @@ export const getUserNotifications = async (userId?: string) => {
     .select('*')
     .eq('user_id', targetUserId)
     .order('created_at', { ascending: false });
-}
+
+  if (error) throw error;
+  return data;
+};
+
+export const markNotificationAsRead = async (notificationId: string) => {
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('id', notificationId);
+
+  if (error) throw error;
+};
+
+export const markAllNotificationsAsRead = async (userId?: string) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  const targetUserId = userId || user?.id;
+  
+  if (!targetUserId) throw new Error('User not authenticated');
+
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('user_id', targetUserId)
+    .is('read_at', null);
+
+  if (error) throw error;
+};
+
 // Profile operations
 export const getUserProfile = async (userId?: string) => {
   const { data: { user } } = await supabase.auth.getUser();

@@ -1,8 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
 import { useState, useEffect } from 'react';
 import { Bell, User, Shield, Trash2, Download, CircleHelp as HelpCircle, LogOut, Eye, EyeOff } from 'lucide-react-native';
-import { supabase, signOut, getCurrentUser } from '@/utils/supabase';
-import { getUserProfile, updateUserProfile, ensureUserProfile } from '@/utils/supabase';
+import { supabase, signOut, getCurrentUser, ensureUserProfile, getUserProfile, updateUserProfile } from '@/utils/supabase';
 import { router } from 'expo-router';
 
 interface UserProfile {

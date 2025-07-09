@@ -374,6 +374,38 @@ export const ensureUserProfile = async () => {
   return profile;
 };
 
+// Profile operations (moved from database.ts to avoid circular imports)
+export const getUserProfile = async (userId?: string) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  const targetUserId = userId || user?.id;
+  
+  if (!targetUserId) throw new Error('User not authenticated');
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('user_id', targetUserId)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const updateUserProfile = async (updates: any) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('User not authenticated');
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(updates)
+    .eq('user_id', user.id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
 // Real-time subscriptions
 export const subscribeToTickets = (userId: string, callback: (payload: any) => void) => {
   return supabase
