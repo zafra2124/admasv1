@@ -150,6 +150,7 @@ export const getUserNotifications = async (userId?: string) => {
     .select('*')
     .eq('user_id', targetUserId)
     .order('created_at', { ascending: false });
+}
 // Profile operations
 export const getUserProfile = async (userId?: string) => {
   const { data: { user } } = await supabase.auth.getUser();
