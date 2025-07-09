@@ -3,6 +3,7 @@ import { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { Trophy, RefreshCw, Calendar, Target, Ticket } from 'lucide-react-native';
 import { getWinningNumbers, getUserTickets } from '@/utils/database';
+import { getCurrentUser, ensureUserProfile } from '@/utils/supabase';
 
 interface WinningNumber {
   id: string;
