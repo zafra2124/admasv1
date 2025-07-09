@@ -2,8 +2,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } 
 import { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { Trophy, RefreshCw, Calendar, Target, Ticket } from 'lucide-react-native';
-import { getWinningNumbers, getUserTickets, ensureUserProfile } from '@/utils/database';
-import { getCurrentUser } from '@/utils/supabase';
+import { getWinningNumbers, getUserTickets } from '@/utils/database';
 
 interface WinningNumber {
   id: string;

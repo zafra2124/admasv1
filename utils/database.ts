@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-export { getCurrentUser, ensureUserProfile } from './supabase';
 
 // Ticket operations
 export const createTicket = async (
