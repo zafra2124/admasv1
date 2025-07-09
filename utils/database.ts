@@ -211,30 +211,6 @@ export const updateUserProfile = async (updates: any) => {
   return data;
 };
 
-// Helper function to ensure user profile exists
-export const ensureUserProfile = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  // Check if profile exists
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('user_id', user.id)
-    .single();
-
-  if (!profile) {
-    // Create profile if it doesn't exist
-    await supabase.from('profiles').insert({
-      user_id: user.id,
-      email: user.email || '',
-      full_name: user.user_metadata?.full_name || ''
-    });
-  }
-
-  return profile;
-};
-
 // Analytics operations
 export const getUserDashboardData = async (userId?: string) => {
   const { data: { user } } = await supabase.auth.getUser();
